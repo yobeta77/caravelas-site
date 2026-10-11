@@ -1,6 +1,7 @@
 import 'server-only';
 import { SiteContent } from '../schema';
 import { parseSheet, TAB, type SheetTabs } from '../parse/tabs';
+import { redactKey } from './redact';
 
 /**
  * Google Sheets source (SPEC §4.5): one `values.batchGet` request for all tabs,
@@ -8,7 +9,7 @@ import { parseSheet, TAB, type SheetTabs } from '../parse/tabs';
  *
  * Env: SHEETS_ID (the id in the sheet URL), SHEETS_API_KEY (restricted to the Sheets API).
  * Throws on any failure so ISR keeps serving the last good page.
- * Never put the URL in an error message: it contains the key.
+ * Never put the URL in an error message (it contains the key); Google's messages go through redactKey().
  */
 const API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const TIMEOUT_MS = 10_000;
@@ -35,7 +36,7 @@ export async function fetchSheetTabs(id: string, key: string): Promise<SheetTabs
   if (!res.ok) {
     // Google's message is useful ("Unable to parse range: precos" = tab missing/renamed; 403 = not shared or bad key)
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-    throw new Error(`Sheets: HTTP ${res.status} — ${body?.error?.message ?? res.statusText}`);
+    throw new Error(redactKey(`Sheets: HTTP ${res.status} — ${body?.error?.message ?? res.statusText}`, key));
   }
   const data = (await res.json()) as BatchGetResponse;
   const ranges = data.valueRanges ?? [];
