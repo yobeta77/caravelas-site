@@ -69,9 +69,56 @@ API errors seen in the `pnpm dev` / Vercel logs:
 - `HTTP 400 — Unable to parse range: precos`: a tab was renamed or deleted.
 
 ## Freshness
-Pages revalidate every 300 s (ISR). The "Site → Publicar alterações" menu (Apps Script, to do)
-will call `POST /api/revalidate` with `x-revalidate-secret` for near-instant updates.
+Pages revalidate every 300 s (ISR). The "Site → Publicar alterações" menu (Apps Script, below)
+calls `POST /api/revalidate` with `x-revalidate-secret` for near-instant updates (it also refreshes
+`/status`). Answers: 200 ok · 401 wrong secret · 429 too many tries (5 wrong secrets per IP per 15 min,
+or 10 requests per minute; `Retry-After` says how long) · 503 `REVALIDATE_SECRET` missing, under 16
+chars or still `change-me`.
 In `pnpm dev` the sheet is read on every reload.
+
+## Apps Script (`apps-script/`)
+Bound to the sheet. Adds a **Site** menu:
+- **Publicar alterações**: runs the same checks as "Verificar", asks before publishing if there are
+  problems, then `POST {SITE_URL}/api/revalidate`.
+- **Verificar folha**: lists the active rows the site would skip (missing required cell, value not in
+  the list, bad time/price/date/link/ordem), missing `config` keys and bad `config` values (opening
+  hours, links, `whatsapp`, `email`, `instagram`), saying whether the site stops publishing (required
+  keys) or just ignores the value. In `config`, "Configurar folha" also adds validation that rejects
+  bad values in those cells and paints an already-invalid value red.
+- **Ver avisos do site**: link to `{SITE_URL}/status`.
+- **Admin → Configurar folha** (idempotent, run it as the sheet owner): checkboxes for `ativo` and
+  `precos.destaque` (existing TRUE/sim/blank values converted), dropdowns for `dia`, `tipo`, `icone`,
+  `foto_lado` (existing values normalized: `Terca` → `Terça`), validation that **rejects** bad times,
+  prices, dates, links, Instagram handles and `ordem`, plain-text format for `hora`/`preco`/`ordem`,
+  red cells for empty required fields in active rows, grey rows when `ativo` is unchecked, frozen and
+  protected header row (+ the `config.chave` column), one grey example row per tab (unchecked, marked
+  with a `[site]` note) and the `LEIA-ME` tab in Portuguese. Prepares 200 rows below each header.
+  Table look: dark green header (lighter for the optional translation columns), borders, per-column
+  widths, alternating rows; `horario` is tinted per day instead (no merged cells: the API only reads
+  the first cell of a merge, so the other rows would lose their day).
+- Hidden **`listas`** tab (not read by the site): A `horas` (05:00–22:30 every 15 min + any time
+  already used; the owner can add more), B `outros_coaches` (e.g. `Dinâmico`, owner-only), C coaches
+  = `equipa.nome` + B, rebuilt by the `onEdit` simple trigger (warning-only protection so it can
+  write when staff edit `equipa`). `horario.hora` and `horario.coach` are dropdowns over A and C.
+  Day/kind/icon/side lists stay fixed in the script on purpose: they are the values the site's code
+  understands, so they must not be editable.
+- **Admin → Configurar publicação**: stores `SITE_URL` and `REVALIDATE_SECRET` in Script Properties
+  (never in the code: the repo is public). Sheet editors can technically read them; the worst they
+  can do with the secret is trigger a revalidation.
+
+The rules mirror `src/content/parse/{values,tabs}.ts`; change both together. The checks were run
+against the seed CSVs: 0 problems.
+
+Install / update:
+1. Make a copy of the sheet first (File → Make a copy) or note the version history point.
+2. With the sheet owner account: Extensions → Apps Script. Replace `Code.gs` with `apps-script/Code.gs`.
+   Project settings → "Show appsscript.json" → paste `apps-script/appsscript.json`. Save.
+3. Reload the sheet → **Site** menu → Admin → Configurar folha (authorize once).
+4. Site → Admin → Configurar publicação: `https://caravelas-site.vercel.app/testsite/caravelas` and the
+   `REVALIDATE_SECRET` from Vercel. Then try Site → Publicar alterações.
+
+Each person who clicks Publicar authorizes once (Google shows an "unverified app" screen: Advanced →
+continue). Without publishing, edits still appear within 5 minutes.
 
 ## Seeding
 The sheet was created by importing one CSV per tab generated from the fixture
