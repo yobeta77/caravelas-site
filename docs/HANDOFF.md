@@ -1,7 +1,7 @@
 # Handoff
 
-## State (2026-10-09)
-Phases 0–3 first pass done with fixture content. Phase 4 (Sheets): source + parsers done on `data/sheets` (Juanpi), Apps Script still to do — see the update below.
+## State (2026-10-11)
+Phases 0–3 first pass done with fixture content. Phase 4 (Sheets): source + parsers + Apps Script done on `data/sheets` (Juanpi); the script is installed in the real sheet — see the updates below.
 - `pnpm typecheck`, `pnpm test` (10 selector tests) and `pnpm build` pass, also with `BASE_PATH=/testsite/caravelas` (assets, hreflang, noindex meta + header verified in the build output).
 - Hero: poster → lazy WebGL2 zigzag refraction on `public/video/hero.{webm,mp4}` (≈2 MB each, 960×540, 24 fps), with green tint overlays. Falls back to the poster on no WebGL2 / reduced motion / saveData / context lost. Pauses off-screen and on hidden tab. Shader params are in `src/components/Hero/refraction.ts` (tuned by eye against Figma `1:10`, not pixel-matched).
 - Marquee, feature rotator (4 real features from Figma), schedule (table + day tabs, "today" in Europe/Lisbon), price band with squiggle, Capitães, footer, mobile menu, PT `/` + EN `/en`, JSON-LD, OG image, `/status`, `/api/revalidate`.
@@ -20,9 +20,9 @@ Phases 0–3 first pass done with fixture content. Phase 4 (Sheets): source + pa
 Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, columns, formats, errors).
 - `src/content/parse/values.ts`: tolerant cell parsers (SPEC §4.4) — times, opening hours, dates, prices, booleans, weekday/kind/icon/side dropdowns, phone → E.164, email lists, URLs, stable row ids. Never throw; `null` = not understood.
 - `src/content/parse/tabs.ts`: `parseSheet(tabs)` → content + Portuguese warnings per tab/row (shown on `/status`). Bad optional cell → field dropped; bad required cell → row skipped; missing tab / bad required `config` key / no valid class or price → `SheetError` (ISR keeps the last good page).
-- `src/content/sources/sheets.ts`: one `values.batchGet` (API key, sheet shared by link as viewer), 10 s timeout, errors never include the key. `index.ts`: `CONTENT_SOURCE=sheets` → `loadSheets()`. `.env.example` documents `SHEETS_ID` / `SHEETS_API_KEY`.
+- `src/content/sources/sheets.ts`: one `values.batchGet` (API key, sheet shared by link as viewer), 10 s timeout; Google's error messages can echo the key, so they go through `redactKey()` (`sources/redact.ts`, tested) before being thrown/logged. `index.ts`: `CONTENT_SOURCE=sheets` → `loadSheets()`. `.env.example` documents `SHEETS_ID` / `SHEETS_API_KEY`.
 - Tests: `values.test.ts` (95 cases) and `tabs.test.ts` (a deliberately messy sample sheet; output validated against `SiteContent`).
-- The real sheet exists, owned by the site's dedicated Google account (ask Juanpi), seeded from the fixture via CSV; round-trip CSV → `parseSheet` matched the fixture exactly (after Nico's translated bios too). Not yet in place: checkboxes/dropdowns/protected header, grey example rows, LEIA-ME, "Publicar" menu.
+- The real sheet exists, owned by the site's dedicated Google account (ask Juanpi), seeded from the fixture via CSV; round-trip CSV → `parseSheet` matched the fixture exactly (after Nico's translated bios too). Sheet UX (checkboxes, dropdowns, protected header, example rows, LEIA-ME, "Publicar" menu): done 2026-10-11, see "Apps Script for the sheet" below.
 - No schema change. Sheet-layout differences from SPEC §4.3 (all 7 languages in `config`, `equipa.instagram/foto_lado/ordem`) are listed in `docs/SHEET.md`.
 
 ## Deploy (2026-10-09)
@@ -39,13 +39,32 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 
 - Floating CTA (`src/components/Hero/CtaButton.tsx`): a copy of the trial-class button fixed to the screen appears (fade + 14px slide, 260ms) once the hero's own has scrolled out above the viewport, and leaves when it is back. Same X as the original (same column/gutters/alignment per breakpoint), Y fixed 72px from the bottom (above the cookie bar when it is open). Rendered in `<body>` via a portal. The button's hard shadow is its own layer with `mix-blend-multiply` (a drop-shadow can't blend; the floating copy needs a second fixed layer because `fixed` is its own stacking context). Button hover turns the label white.
 
+## Update — Apps Script for the sheet (Juanpi, 2026-10-11)
+`apps-script/Code.gs` + `appsscript.json` (bound to the sheet). Details and install steps in `docs/SHEET.md`.
+- **Installed and run in the real sheet** ("Configurar folha" OK on all 6 tabs). "Configurar publicação" not done yet: needs the `REVALIDATE_SECRET` from Vercel (Nico).
+- Menu **Site**: Publicar alterações (checks the sheet, then `POST /api/revalidate`), Verificar folha (rows the site would skip), Ver avisos do site (`/status`), Admin → Configurar folha / Configurar publicação. `SITE_URL` + secret live in Script Properties, never in the repo.
+- Configurar folha (idempotent): checkboxes (`ativo`, `precos.destaque`), dropdowns (`dia`, `tipo`, `icone`, `foto_lado` fixed in the script — they are the values the site's code understands; `hora` and `coach` from the hidden `listas` tab), validation that rejects bad prices/dates/links/instagram/`ordem`, red = required cell empty in an active row, grey = `ativo` unchecked, frozen + protected header (and `config.chave`), one grey example row per tab (unchecked, `[site]` note), `LEIA-ME` tab in PT.
+- Table look: dark green header (lighter for translation columns), borders, per-column widths, banded rows; `horario` tinted per day instead. **No merged cells**: the API returns only the first cell of a merge, so the other rows would lose their value.
+- Hidden `listas` tab (not read by the site): `horas` 05:00–22:30 every 15 min (+ times already used; owner can add), `outros_coaches` (e.g. `Dinâmico`), `coaches` = `equipa.nome` + extras, rebuilt by the `onEdit` simple trigger.
+- Lessons: the sheet's locale (PT/ES) needs `;` as the argument separator in validation/conditional-format formulas — the script detects it with a probe and flushes inside `try` (Sheets throws on flush, not on the call). Google won't hide the active tab, so `listas` is hidden at the end with `LEIA-ME` active.
+- Checks: the rules were run against the seed CSVs (0 false problems) and the parser's test inputs.
+- 2026-10-11: `config` values are now checked too (Verificar/Publicar + validation + red): a test value `asfsa` in `horario_sab` had passed the sheet and broke `pnpm build`. `hoursRange`/`phoneE164`/`badEmails`/URL rule were compared against `parseTimeRange`/`parsePhone`/`parseEmails`/`parseUrl` on edge cases: identical, and the sheet regexes never reject a value the site accepts. Re-paste `Code.gs` in the sheet and run Configurar folha again.
+- Cleanup in the real sheet: done 2026-10-11 (empty `marquesina` rows 3–4 deleted; `precos` "2 Aulas por semana" back to 60).
+
+## Update — `/api/revalidate` hardened (Juanpi, 2026-10-11)
+- `src/app/api/revalidate/guard.ts` (+ `guard.test.ts`): constant-time secret check (`timingSafeEqual` over SHA-256 of both sides, so length doesn't leak), client IP from `x-forwarded-for`, in-memory fixed-window limiter.
+- `route.ts`: 503 if `REVALIDATE_SECRET` is missing, shorter than 16 chars or `change-me`; 429 + `Retry-After` after 5 wrong secrets per IP in 15 min or 10 requests per IP in 1 min; 401 wrong secret (logged with the IP); 200 revalidates every language's home **and `/status`** and returns the paths. Responses are `no-store`.
+- The limiter lives in each serverless instance's memory: a speed bump against brute force and click loops, not a global guarantee. The real protection is a long random secret.
+- `apps-script/Code.gs` "Publicar" now explains 429 (wait N minutes) and 503 (secret not configured on Vercel).
+- **Nico:** check that the Vercel `REVALIDATE_SECRET` is ≥ 16 chars (e.g. `openssl rand -hex 24`), or Publicar gets 503.
+
 ## Next steps
 - Compare against Figma at 1728 / 440 widths (only checked by eye at 1200, 599 and 375); Playwright smoke test; Lighthouse on the deployed URL (not run).
 - Hero: separate portrait video crop for mobile if needed; the source video is a split-screen of two clips, so check the crop on phones. Poster is a plain frame, not a pre-rendered shader frame.
 - Marquee: verify no jump after font load / resize on a real device; reduced-motion CSS is untested.
 - Privacy / Cookies pages (footer links are `#`) and Livro de Reclamações logo (text link for now).
 - Deploy: Vercel project + rewrite in nicolino.zip (Nico, separate PR).
-- Sheet: Apps Script "Site → Publicar alterações" (POSTs `/api/revalidate`), checkboxes/dropdowns/protected header, grey example row per tab, LEIA-ME in PT for the gym (Juanpi).
+- Sheet: Site → Admin → Configurar publicação once Nico shares `REVALIDATE_SECRET`, then test Publicar (Juanpi).
 
 ## Hero credential badges
 - `src/components/Hero/Badges.tsx`: CrossFit Affiliates (→ `config.affiliateHref`), Google rating (→ maps.app.goo.gl link), Wodily Top 1 Lisboa (→ wodily.com/city/pt/lisbon). SVGs in `public/assets/badge-*.svg` (Wodily's embedded PNG downsampled to 700px).
@@ -64,7 +83,8 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Coach copy/bios are taken from the Figma frame; confirm they are final.
 
 ## Requests
-- ~~Juanpi: implement `src/content/sources/sheets.ts` (+ parsers)~~ done on `data/sheets`. Still Juanpi: harden `/api/revalidate` (constant-time secret compare, rate limit), Apps Script (menu "Publicar alterações", validation, LEIA-ME).
+- ~~Juanpi: implement `src/content/sources/sheets.ts` (+ parsers)~~ done on `data/sheets`. ~~Apps Script~~ done. ~~Harden `/api/revalidate`~~ done 2026-10-11 (see below).
+- Nico: send Juanpi the `REVALIDATE_SECRET` (privately) so the sheet's "Publicar" menu can be configured.
 - Nico: add Juanpi as a GitHub collaborator (he works from a fork until then).
 - Nico (Vercel, Production): add `SHEETS_ID` and `SHEETS_API_KEY` (Juanpi sends them privately), then switch `CONTENT_SOURCE` to `sheets`. Until then production stays on the fixture, so merging `data/sheets` changes nothing live.
 - Nico: pin pnpm in `package.json` (`"packageManager": "pnpm@10.28.0"`): without it corepack picks pnpm 12, which Node 22's corepack can't start (`Cannot find module …pnpm.cjs`); the lockfile is v9.0.
