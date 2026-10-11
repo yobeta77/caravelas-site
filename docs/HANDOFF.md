@@ -1,7 +1,8 @@
 # Handoff
 
 ## State (2026-10-11)
-Phases 0–3 first pass done with fixture content. Phase 4 (Sheets): source + parsers + Apps Script done on `data/sheets` (Juanpi); the script is installed in the real sheet — see the updates below.
+Phases 0–3 first pass done with fixture content. Phase 4 (Sheets): source + parsers + Apps Script + hardened `/api/revalidate` done on `data/sheets` (Juanpi, 6 commits on top of `f42007c`, pushed to Juanpi's fork, to be merged into `main` via PR). The script is installed in the real sheet. Production still runs on the fixture until Nico sets the Vercel env vars (Requests). See the updates below.
+- Build with `CONTENT_SOURCE=sheets` reads the real sheet at build time: an invalid required value (e.g. a bad opening-hours cell in `config`) fails `pnpm build` on purpose, with the reason in the log. To build without Google: `CONTENT_SOURCE=fixture pnpm build` (PowerShell: `$env:CONTENT_SOURCE='fixture'; pnpm build`).
 - `pnpm typecheck`, `pnpm test` (10 selector tests) and `pnpm build` pass, also with `BASE_PATH=/testsite/caravelas` (assets, hreflang, noindex meta + header verified in the build output).
 - Hero: poster → lazy WebGL2 zigzag refraction on `public/video/hero.{webm,mp4}` (≈2 MB each, 960×540, 24 fps), with green tint overlays. Falls back to the poster on no WebGL2 / reduced motion / saveData / context lost. Pauses off-screen and on hidden tab. Shader params are in `src/components/Hero/refraction.ts` (tuned by eye against Figma `1:10`, not pixel-matched).
 - Marquee, feature rotator (4 real features from Figma), schedule (table + day tabs, "today" in Europe/Lisbon), price band with squiggle, Capitães, footer, mobile menu, PT `/` + EN `/en`, JSON-LD, OG image, `/status`, `/api/revalidate`.
@@ -58,6 +59,13 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - `apps-script/Code.gs` "Publicar" now explains 429 (wait N minutes) and 503 (secret not configured on Vercel).
 - **Nico:** check that the Vercel `REVALIDATE_SECRET` is ≥ 16 chars (e.g. `openssl rand -hex 24`), or Publicar gets 503.
 
+## Incident — Google suspension (2026-10-11)
+- Google's automated checks suspended the Cloud project `caravelas-site` (so the API key returned `403 Consumer 'api_key:…' has been suspended`) and Drive showed the sheet as violating the Terms of Service. Most likely a false positive: brand-new account + sheet public by link with emails/phone + an Apps Script that prompts for a "Segredo" and calls an external URL.
+- Same day: project **reactivated** after Google's review ("currently complies with our policies"). The API key was **rotated** (the old one had been pasted in a chat; it was never committed). The sheet is readable again through the API.
+- Code fix: Google's error message echoed the full key into the build log → `redactKey()` (`src/content/sources/redact.ts`).
+- If it happens again: don't create copies or new accounts in a hurry (repeat flags can escalate to the account); request a review (sheet → Share → Request a review; Cloud: the reactivation form in the notice email).
+- Option to remove the trigger: read the sheet with a **service account** instead of an API key, so the sheet stays private (shared only with the service account's email). Only `sources/sheets.ts` changes (JWT → OAuth token → same `batchGet`); parsers, tests and Apps Script stay. Not urgent.
+
 ## Next steps
 - Compare against Figma at 1728 / 440 widths (only checked by eye at 1200, 599 and 375); Playwright smoke test; Lighthouse on the deployed URL (not run).
 - Hero: separate portrait video crop for mobile if needed; the source video is a split-screen of two clips, so check the crop on phones. Poster is a plain frame, not a pre-rendered shader frame.
@@ -65,6 +73,8 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Privacy / Cookies pages (footer links are `#`) and Livro de Reclamações logo (text link for now).
 - Deploy: Vercel project + rewrite in nicolino.zip (Nico, separate PR).
 - Sheet: Site → Admin → Configurar publicação once Nico shares `REVALIDATE_SECRET`, then test Publicar (Juanpi).
+- ~~Sheet: latest `apps-script/Code.gs` in the real sheet + Configurar folha again~~ done 2026-10-11.
+- Sheet (optional): switch from API key + public link to a service account + private sheet (see Incident).
 
 ## Hero credential badges
 - `src/components/Hero/Badges.tsx`: CrossFit Affiliates (→ `config.affiliateHref`), Google rating (→ maps.app.goo.gl link), Wodily Top 1 Lisboa (→ wodily.com/city/pt/lisbon). SVGs in `public/assets/badge-*.svg` (Wodily's embedded PNG downsampled to 700px).
@@ -86,6 +96,6 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - ~~Juanpi: implement `src/content/sources/sheets.ts` (+ parsers)~~ done on `data/sheets`. ~~Apps Script~~ done. ~~Harden `/api/revalidate`~~ done 2026-10-11 (see below).
 - Nico: send Juanpi the `REVALIDATE_SECRET` (privately) so the sheet's "Publicar" menu can be configured.
 - Nico: add Juanpi as a GitHub collaborator (he works from a fork until then).
-- Nico (Vercel, Production): add `SHEETS_ID` and `SHEETS_API_KEY` (Juanpi sends them privately), then switch `CONTENT_SOURCE` to `sheets`. Until then production stays on the fixture, so merging `data/sheets` changes nothing live.
+- Nico (Vercel, Production): add `SHEETS_ID` and `SHEETS_API_KEY` (Juanpi sends them privately; the key was rotated on 2026-10-11, use the new one), then switch `CONTENT_SOURCE` to `sheets`. Until then production stays on the fixture, so merging `data/sheets` changes nothing live.
 - Nico: pin pnpm in `package.json` (`"packageManager": "pnpm@10.28.0"`): without it corepack picks pnpm 12, which Node 22's corepack can't start (`Cannot find module …pnpm.cjs`); the lockfile is v9.0.
 - Contract (Nico/Juanpi, `contract:` PR): optionally add `wodilyHref` and `googleReviewsHref` to `SiteConfig` so the badge links can be edited from the sheet.
