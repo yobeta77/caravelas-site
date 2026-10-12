@@ -64,6 +64,7 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Coach copy/bios are taken from the Figma frame; confirm they are final.
 
 ## Requests
+- Admin panel (proposal, not started): `docs/ADMIN.md` — Google-login `/admin` with draft/preview/publish/history on top of the existing contract, on-brand with the site. Needs a decision from Nico + Juanpi (auth provider, DB, scope of phase 1) and a `contract:` PR (`meta.source` gains `'db'`, `EditableContent`).
 - ~~Juanpi: implement `src/content/sources/sheets.ts` (+ parsers)~~ done on `data/sheets`. Still Juanpi: harden `/api/revalidate` (constant-time secret compare, rate limit), Apps Script (menu "Publicar alterações", validation, LEIA-ME).
 - Nico: add Juanpi as a GitHub collaborator (he works from a fork until then).
 - Nico (Vercel, Production): add `SHEETS_ID` and `SHEETS_API_KEY` (Juanpi sends them privately), then switch `CONTENT_SOURCE` to `sheets`. Until then production stays on the fixture, so merging `data/sheets` changes nothing live.
