@@ -93,6 +93,7 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Coach copy/bios are taken from the Figma frame; confirm they are final.
 
 ## Requests
+- Admin panel (proposal, not started): `docs/ADMIN.md` — Google-login `/admin` with draft/preview/publish/history on top of the existing contract, on-brand with the site. Needs a decision from Nico + Juanpi (auth provider, DB, scope of phase 1) and a `contract:` PR (`meta.source` gains `'db'`, `EditableContent`).
 - ~~Juanpi: implement `src/content/sources/sheets.ts` (+ parsers)~~ done on `data/sheets`. ~~Apps Script~~ done. ~~Harden `/api/revalidate`~~ done 2026-10-11 (see below).
 - Nico: send Juanpi the `REVALIDATE_SECRET` (privately) so the sheet's "Publicar" menu can be configured.
 - Nico: add Juanpi as a GitHub collaborator (he works from a fork until then).
