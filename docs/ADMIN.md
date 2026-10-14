@@ -141,3 +141,88 @@ The panel reuses the site's tokens and components; it must be impossible to tell
 - `contract:` PR (Nico + Juanpi): `'db'` source, `EditableContent`, versioning notes in `CONTENT_CONTRACT.md`.
 - `data/` (Juanpi): `db.ts` source, tables/migrations, publish + revalidate, backups, Sheets import.
 - `ui/` (Nico, with Claude): auth screens, admin shell, editors, preview, diff, history, design-system pass.
+
+## 11. Options and trade-offs (Juanpi, 2026-10-14) — for discussion with Nico
+Context: in person we agreed to look at this as a **product with potential**, not only Caravelas' site.
+That changes the cost/benefit of the panel: for one gym it is expensive for what it solves; for a product it
+is the core. Nothing below is decided; see `docs/DECISIONS.md`.
+
+### 11.1 Where the content lives
+| Option | What | Pros | Cons | Fits the product idea? |
+|---|---|---|---|---|
+| **A. Google Sheet** (today) | Sheet + Apps Script menu/validation; site reads it via Sheets API | Already built and installed; free; staff know spreadsheets; Google handles access and version history | Not on-brand, no real preview; drafts/history are awkward; Google flagged it once (public link) → needs a service account + private sheet (Phase 0); one sheet per gym does not scale | Only as Caravelas' stopgap and as an import format |
+| **B. Own DB + own panel** (§4–§8) | Neon Postgres + Auth.js (Google login, allowlist) + `/admin` in this app | On-brand, phone-friendly, preview/diff/history/rollback; same zod contract; multi-gym possible; no third party can take the content away | Weeks of work; auth is the main security risk; more accounts to own (Neon, Google Cloud) | **Yes** — this is the product |
+| **C. Wix headless** | Next.js stays on Vercel; Wix CMS + Wix members act as the backend through Wix APIs; staff edit in Wix's dashboard | No DB/auth to build; a ready-made editor the gym may already know | Generic, not on-brand; lock-in to Wix plans/prices (not checked); each client gym would need its own Wix site/plan → we would sell "a frontend for Wix" | Weak |
+
+### 11.2 Can the panel start before choosing A or B?
+Yes. The panel never talks to storage directly; it uses an interface (repository pattern), like `getSiteContent()` does for reading:
+```ts
+interface ContentStore {
+  getDraft(): Promise<EditableContent>
+  saveDraft(content: EditableContent, author: string): Promise<void>
+  publish(author: string, note?: string): Promise<void>
+  listVersions(): Promise<VersionInfo[]>
+  restore(versionId: string): Promise<void>
+}
+```
+UI first against an in-memory/JSON store, then `SheetsStore` or `DbStore` without touching the UI. Caveats:
+- **Writing** to the Sheet needs the service account (the current API key is read-only) → Phase 0 is a prerequisite for A.
+- Drafts and history are natural in a DB and have to be emulated in a Sheet (extra tabs or Drive revisions).
+- What must be agreed first is the **contract** (`contract:` PR): `EditableContent = SiteContent.omit({ meta })`,
+  `VersionInfo { id, createdAt, author, status: draft|published|archived, note? }`, `meta.source` gains `'db'`,
+  and the `ContentStore` interface above. ~30–40 lines; it is the common language between the UI and the storage.
+
+### 11.3 Hosting and the domain (Wix)
+- **Wix cannot host this app** in practice: Wix-managed headless hosting fully supports Astro and has no custom
+  backend endpoints; we need SSR + `/api/revalidate` (+ DB/auth for the panel). "Self-managed" means hosting elsewhere.
+- **We can keep the domain at Wix**: a Wix-bought domain can point to an external host without a transfer
+  (Wix → Domains → Manage DNS Records: `A` for the root and `CNAME` for `www` with Vercel's values; delete old A/CNAME;
+  up to 48 h to propagate). Transfer to another registrar later is optional.
+- Before touching DNS: keep the **MX/SPF/DKIM** records if `@caravelas.fit` email runs through Wix or Google
+  Workspace; confirm in the Wix account whether cancelling the site's Premium plan affects the domain (Wix's article does not say).
+
+### 11.4 Costs for Caravelas alone (prices checked 2026-10-14)
+| Piece | Cost | Note |
+|---|---|---|
+| Neon (DB) | Free | 1 GB/project, 100 CU-h/month, suspends after 5 min idle (first request after idle is slower) |
+| Auth.js + Google login | Free | A library, not a service |
+| Clerk (alternative) | Free up to 50k monthly retained users | No MFA on free; Pro ≈ USD 25/month |
+| Google Sheets API | Free | — |
+| **Vercel** | **Pro USD 20/developer/month** | **Hobby is non-commercial only**; a gym's site is commercial → needed with or without panel (is the `cravel` Pro team the one to use?) |
+| Domain | a few €/year | Paid by the gym |
+| Google Workspace (optional) | ≈ USD 7/user/month | Only for `@caravelas.fit` domain login; an email allowlist is free |
+The real cost of the panel is **time** (build + maintenance) and **security responsibility** (login), not money.
+
+### 11.5 Selling it to other gyms
+- **Two models:** *done-for-you* (we build each box's site from the base, monthly fee for hosting + panel + support;
+  can start now, scales with our hours) vs *self-serve SaaS* (sign-up, templates, payments, onboarding; scales
+  without us, much more product). Suggested: done-for-you with Caravelas as pilot + one partner box, then decide.
+- **Technical, if we go multi-gym — decide before Phase 1, expensive to change later:**
+  - one app/deployment for all gyms, tenant resolved by domain (Vercel Pro: unlimited domains per project);
+  - `gym_id` on every content table; login knows which gym a user belongs to (Clerk "organizations", or by hand with Auth.js);
+  - split **template** from **brand** (colours, logo, fonts, which sections show, fixed texts) — today everything is
+    Caravelas-specific (Figma, hero shader, Lottie, Capitães photo tags);
+  - booking integrations (Caravelas uses RegyBox; other boxes use other systems) — importing schedules could be a differentiator; APIs to be researched;
+  - legal pages per gym (each gym is the GDPR controller for its site).
+- **Costs at scale:** fixed ≈ USD 20–60/month (Vercel Pro seats + usage; Neon/Auth mostly free at this size);
+  per extra gym ≈ 0 + its domain. The expensive part is support time.
+- **Non-technical (check with an accountant):** invoicing in Portugal (activity/company), contracts per gym
+  (scope, who owns content and domain), GDPR processor role for staff accounts.
+- **Validate before building:** talk to 4–5 box owners in Lisbon (what they use, what hurts, what they would pay);
+  look at competitors (Wix/Squarespace templates, box-management platforms that include a website) — not researched yet.
+
+### 11.6 Juanpi's view and questions for us
+View: do **Phase 0** now (service account + private sheet: useful in every scenario); agree the **contract** and
+the **multi-gym yes/no**; build the panel (option B) with Caravelas as first real user; keep Wix only as the
+domain registrar (+ email if applicable).
+
+To decide together:
+1. Product model: done-for-you or SaaS? CrossFit boxes only or gyms in general?
+2. Multi-gym from day one (`gym_id`, tenant by domain)?
+3. Auth.js or Clerk? Allowlist or Workspace domain?
+4. Which Vercel team/plan hosts production (Pro needed for commercial use)?
+5. Domain: keep at Wix + DNS to Vercel now, transfer later? Who checks the email (MX) setup?
+6. Who validates with other box owners, and when?
+
+Sources: neon.com/pricing · clerk.com/articles/clerk-pricing-explained · vercel.com/docs/plans/hobby ·
+support.wix.com/en/article/connecting-a-wix-domain-to-an-external-site · dev.wix.com/docs/go-headless (development paths).
