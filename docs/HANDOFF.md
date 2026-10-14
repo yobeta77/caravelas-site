@@ -99,3 +99,38 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Nico (Vercel, Production): add `SHEETS_ID` and `SHEETS_API_KEY` (Juanpi sends them privately; the key was rotated on 2026-10-11, use the new one), then switch `CONTENT_SOURCE` to `sheets`. Until then production stays on the fixture, so merging `data/sheets` changes nothing live.
 - Nico: pin pnpm in `package.json` (`"packageManager": "pnpm@10.28.0"`): without it corepack picks pnpm 12, which Node 22's corepack can't start (`Cannot find module …pnpm.cjs`); the lockfile is v9.0.
 - Contract (Nico/Juanpi, `contract:` PR): optionally add `wodilyHref` and `googleReviewsHref` to `SiteConfig` so the badge links can be edited from the sheet.
+
+## Wix inventory (Juanpi, 2026-10-12)
+Looked at the old site's Wix dashboard (Juanpi is Admin/Co-Owner) + public sitemap + DNS. No personal data copied here.
+
+**Plan & domain**
+- Wix Premium "Core", 2-year cycle, paid until **Nov 21 2027**. Domain `caravelas.fit` is **registered at Wix**, renews **2029**. No hurry on billing; cancel the plan before the Nov 2027 renewal.
+- DNS is hosted by Wix (`ns0/ns1.wixdns.net`). Apex A → Wix IPs, `www` CNAME → `cdn3.wixdns.net`.
+- **Email is Google Workspace** (`MX 1 aspmx.l.google.com`), not Wix. When pointing the domain at Vercel: change only A/`www`, keep MX. (Or move DNS elsewhere copying MX first.)
+- No SPF and no DMARC TXT records exist → gym email may land in spam. Worth adding (`v=spf1 include:_spf.google.com ~all` + a DMARC record) at launch.
+
+**Live lead capture on Wix (not in our SPEC)**
+- Forms with recent submissions (Oct 2026): **"Aula Experimental"** (trial class, since 2019), **"Contato"**, "Inscrição Teaser"; plus "Fitness Match XP" (19 submissions, Jun–Jul 2026, landing `/fitnessmatch`).
+- Two custom automations (by Feu) fire on "Aula Experimental" and "Contato" submissions.
+- Contacts: ~1,900, ~1,500 email subscribers. Exportable as CSV (Contacts → Import/Export) — personal data, GDPR.
+- Decision needed with Feu: the new site has no form (SPEC non-goal). Either accept WhatsApp-only for trial classes, or add a small trial-class form (e.g. → Google Form / Apps Script → the gym's email).
+
+**Not in use**
+- Wix Stores / Bookings / Payments: 0 orders in last 30 days; Wix Payments has an unresolved verification issue. Other installed apps: Multilingual, Pro Gallery, Events Calendar, AdSense, WhatsApp chat.
+
+**Content facts (resolve Open questions)**
+- Address: R. Arco do Chafariz das Terras, 13A, 1200-607 Lisboa.
+- Instagram `@crossfitcaravelas` confirmed; Facebook `facebook.com/crossfitcaravelas`.
+- Opening hours (old site): Mon–Fri 7h–21h, Sat 9h–12h, Sun closed.
+- Prices (old site): drop-in €20, 2×/sem €60, 3×/sem **€70**, trânsito livre €80.
+- **Phone mismatch:** old site's WhatsApp/trial CTA and Wix business info use **+351 912 423 080**; footer shows +351 912 849 143 (the one in our fixture). Ask Feu which is the WhatsApp.
+- Old site has no RegyBox link either.
+- Search (Google, Sep–Oct): top queries "crossfit caravelas", "caravelas crossfit", "crossfit carcavelos". ~250 sessions / 30 days.
+
+**301 map (SPEC §3.5 step 5)**
+| Old URL | New |
+|---|---|
+| `/planos`, `/book-online`, `/service-page/*`, `/product-page/*` | `/#horarios` (schedule + pricing band) |
+| `/teaser-politica-de-privacidade` | `/politica-de-privacidade` |
+| `/copia-politica-de-privacidade` | `/politica-de-cookies` |
+| `/fitnessmatch`, `/fitnessmatch-thanks`, `/obrigado`, `/temp-2` | `/` (unless the Fitness Match landing must stay) |
