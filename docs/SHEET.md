@@ -7,16 +7,50 @@ Code: `src/content/sources/sheets.ts` (fetch) → `src/content/parse/tabs.ts` (t
 
 ## Access
 - Owner: the site's dedicated Google account (not a personal one; ask Juanpi). The Google Cloud
-  project with the API key lives in the same account.
-- Sharing: **anyone with the link → viewer** (the API key can only read public-by-link sheets).
-  Editors: the gym staff, Juanpi, Nico.
-- Env (`.env.local` locally, Vercel → Settings → Environment Variables in production):
+  project (`caravelas-site`) lives in the same account.
+- **The site reads the sheet with a service account** (since 2026-10, branch `data/service-account`):
+  a Google identity of the Cloud project, with its own email (`…@caravelas-site.iam.gserviceaccount.com`).
+  The sheet is **private**: shared with that email as **viewer**, plus the human editors (gym staff,
+  Juanpi, Nico). Nobody else, and no "anyone with the link".
+  - Why: on 2026-10-11 Google suspended the project and flagged the sheet; a public-by-link sheet
+    with phone numbers and emails was the most likely trigger (HANDOFF → *Incident*). It is also
+    what a future admin panel needs to *write* to the sheet (an API key can only read public sheets).
+  - How: `sources/google-auth.ts` signs a JWT (RS256) with the service account's private key and
+    trades it for a 1-hour OAuth token (`spreadsheets.readonly` scope), cached in memory; `sheets.ts`
+    sends it as `Authorization: Bearer` to the same `values.batchGet`. No Google SDK.
+  - **Legacy:** if no `SHEETS_SA_*` var is set, the site falls back to `SHEETS_API_KEY` (only works
+    while the sheet is public by link). This exists only for the switch-over; once production uses the
+    service account, delete the API key in Google Cloud and the var everywhere.
+- Env (`.env.local` locally, Vercel → Settings → Environment Variables in production, type *Sensitive*):
 
 | Var | Value |
 |---|---|
 | `CONTENT_SOURCE` | `sheets` (`fixture` = the JSON in the repo) |
 | `SHEETS_ID` | the part of the sheet URL between `/d/` and `/edit` |
-| `SHEETS_API_KEY` | API key restricted to the Google Sheets API. Secret: never commit it |
+| `SHEETS_SA_EMAIL` | `client_email` from the service account's JSON key file |
+| `SHEETS_SA_PRIVATE_KEY` | `private_key` from the same file, from `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----`. Pasted with real line breaks or with the literal `\n` of the JSON, both work. Secret: never commit it |
+| `SHEETS_API_KEY` | legacy, see above |
+
+### Setting up the service account (once, as the site's Google account)
+1. <https://console.cloud.google.com> → project **caravelas-site** → *APIs & Services → Library*:
+   check **Google Sheets API** is enabled (it is, for the API key).
+2. *IAM & Admin → Service Accounts → Create service account*: name `site-reader`, description
+   "Lê a folha de conteúdos do site". **No roles** (skip "Grant access"): access comes from sharing
+   the sheet, not from IAM.
+3. Open it → *Keys → Add key → Create new key → JSON*. A file downloads: it is the only copy of the
+   private key. Keep it in a password manager, never in the repo, a chat or an email; delete the
+   download once the vars are set.
+4. In the sheet: *Share* → add the service account's email as **Viewer**, untick "Notify people".
+5. Set `SHEETS_SA_EMAIL` and `SHEETS_SA_PRIVATE_KEY` in `.env.local` (the key on one line, in double
+   quotes, exactly as it appears in the JSON with its `\n`), run `pnpm dev`, open `/status`:
+   `source: sheets` and today's `fetchedAt` = it works.
+6. Vercel (Production): add the same two vars (*Sensitive*), redeploy, check `/status` on the live URL.
+7. Only then: sheet → *Share → General access → Restricted*. Check `/status` again (and that the
+   staff can still open the sheet: they must be listed as editors by email). Then delete the API key
+   (*APIs & Services → Credentials*) and `SHEETS_API_KEY` from Vercel and `.env.local`.
+- Rotating: create a new key on the service account, update both places, delete the old key.
+- If a key leaks: delete it in *Service Accounts → Keys* at once (the site stops reading until the new
+  one is set; ISR keeps serving the last good page meanwhile).
 
 ## Tabs and columns
 Header row = first non-empty row. Headers and dropdown values are matched ignoring case,
@@ -64,8 +98,14 @@ Warnings (in Portuguese, e.g. `horario linha 14: hora inválida '7.3O' (linha ig
 listed on **`/status`** (noindex, unlinked), with the source, fetch time and counts per section.
 
 API errors seen in the `pnpm dev` / Vercel logs:
-- `HTTP 403 — The caller does not have permission`: the sheet isn't shared by link, or the key lacks the Sheets API.
-- `HTTP 400 — API key not valid`: wrong key.
+- `HTTP 403 — The caller does not have permission (a folha está partilhada com …?)`: the sheet isn't
+  shared with the service account's email, or the Sheets API is off in the project.
+- `a Google recusou a conta de serviço (HTTP 400 — invalid_grant: Invalid JWT Signature.)`: the key was
+  deleted/rotated, or the email and key belong to different service accounts.
+- `invalid_grant: Invalid JWT: Token must be a short-lived token…`: the machine's clock is off.
+- `a chave da conta de serviço não é válida`: `SHEETS_SA_PRIVATE_KEY` isn't the `private_key` field
+  (e.g. the whole JSON, or the `-----BEGIN`/`-----END` lines are missing).
+- Legacy API key: `HTTP 403` = sheet not public by link, or key without the Sheets API; `HTTP 400 — API key not valid` = wrong key.
 - `HTTP 400 — Unable to parse range: precos`: a tab was renamed or deleted.
 
 ## Freshness

@@ -64,7 +64,7 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Same day: project **reactivated** after Google's review ("currently complies with our policies"). The API key was **rotated** (the old one had been pasted in a chat; it was never committed). The sheet is readable again through the API.
 - Code fix: Google's error message echoed the full key into the build log → `redactKey()` (`src/content/sources/redact.ts`).
 - If it happens again: don't create copies or new accounts in a hurry (repeat flags can escalate to the account); request a review (sheet → Share → Request a review; Cloud: the reactivation form in the notice email).
-- Option to remove the trigger: read the sheet with a **service account** instead of an API key, so the sheet stays private (shared only with the service account's email). Only `sources/sheets.ts` changes (JWT → OAuth token → same `batchGet`); parsers, tests and Apps Script stay. Not urgent.
+- Option to remove the trigger: read the sheet with a **service account** instead of an API key, so the sheet stays private (shared only with the service account's email). Done in code on `data/service-account` (2026-10-27), see the update below.
 
 ## Next steps
 - Compare against Figma at 1728 / 440 widths (only checked by eye at 1200, 599 and 375); Playwright smoke test; Lighthouse on the deployed URL (not run).
@@ -74,7 +74,17 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Deploy: Vercel project + rewrite in nicolino.zip (Nico, separate PR).
 - Sheet: Site → Admin → Configurar publicação once Nico shares `REVALIDATE_SECRET`, then test Publicar (Juanpi).
 - ~~Sheet: latest `apps-script/Code.gs` in the real sheet + Configurar folha again~~ done 2026-10-11.
-- Sheet (optional): switch from API key + public link to a service account + private sheet (see Incident).
+- Sheet: service account + private sheet (ADMIN.md Phase 0) — code on `data/service-account`; Google Cloud setup, Vercel vars and making the sheet private still to do (see the update below).
+
+## Update — service account, private sheet (Juanpi, 2026-10-27)
+ADMIN.md §8 Phase 0, first part. Branch `data/service-account`, on top of `data/sheets` (needs `redact.ts` from PR #2: merge that first).
+- `src/content/sources/google-auth.ts` (+ `google-auth.test.ts`): service-account JWT (RS256, `node:crypto`, no Google SDK) → OAuth token from `oauth2.googleapis.com/token`, scope `spreadsheets.readonly`, cached in memory until 5 min before expiry. Accepts the private key with real newlines or the JSON's literal `\n`. Errors in Portuguese, never with the key, the assertion or the token. The token POST has no `cache`/`next` options, so it is not stored in Next's data cache and does not make the pages dynamic.
+- `sources/sheets.ts`: same `values.batchGet`, now with `Authorization: Bearer` when `SHEETS_SA_EMAIL` + `SHEETS_SA_PRIVATE_KEY` are set; falls back to `SHEETS_API_KEY` when neither is (switch-over only; half a service account is an error). 403 with the service account says which email the sheet must be shared with.
+- `redact.ts` also strips `ya29.` tokens and PEM private keys.
+- No contract change, no UI change, parsers and Apps Script untouched (the script runs as the signed-in editor, so a private sheet doesn't affect it).
+- Tests: the new tests generate a throwaway RSA key per run and verify the JWT signature with its public key. Ran in a sandbox without the repo's dependencies (a vitest shim on `node:test` + `tsc` on the changed files): 15/15 and 0 type errors. **`pnpm test` / `pnpm typecheck` / `pnpm build` still to run on a real checkout.**
+- Order of the switch (details in `docs/SHEET.md` → Access): create the service account (no IAM roles) + JSON key → share the sheet with its email as viewer → vars in `.env.local`, check `/status` → vars in Vercel, redeploy, check `/status` → only then make the sheet *Restricted* → delete the API key and `SHEETS_API_KEY`.
+- Next in Phase 0: nightly JSON backup of the sheet; the write scope (`spreadsheets`, editor share) only when a panel needs it.
 
 ## Hero credential badges
 - `src/components/Hero/Badges.tsx`: CrossFit Affiliates (→ `config.affiliateHref`), Google rating (→ maps.app.goo.gl link), Wodily Top 1 Lisboa (→ wodily.com/city/pt/lisbon). SVGs in `public/assets/badge-*.svg` (Wodily's embedded PNG downsampled to 700px).
@@ -98,6 +108,7 @@ Branch `data/sheets`. Details for both of us in **`docs/SHEET.md`** (tabs, colum
 - Nico: send Juanpi the `REVALIDATE_SECRET` (privately) so the sheet's "Publicar" menu can be configured.
 - Nico: add Juanpi as a GitHub collaborator (he works from a fork until then).
 - Nico (Vercel, Production): add `SHEETS_ID` and `SHEETS_API_KEY` (Juanpi sends them privately; the key was rotated on 2026-10-11, use the new one), then switch `CONTENT_SOURCE` to `sheets`. Until then production stays on the fixture, so merging `data/sheets` changes nothing live.
+- Nico (Vercel, Production), after `data/service-account` is merged: add `SHEETS_SA_EMAIL` and `SHEETS_SA_PRIVATE_KEY` as *Sensitive* (Juanpi sends them privately), redeploy, tell Juanpi; he then makes the sheet private and you delete `SHEETS_API_KEY`. If production is still on the fixture, you can skip the API key entirely and set these two instead.
 - Nico: pin pnpm in `package.json` (`"packageManager": "pnpm@10.28.0"`): without it corepack picks pnpm 12, which Node 22's corepack can't start (`Cannot find module …pnpm.cjs`); the lockfile is v9.0.
 - Contract (Nico/Juanpi, `contract:` PR): optionally add `wodilyHref` and `googleReviewsHref` to `SiteConfig` so the badge links can be edited from the sheet.
 
